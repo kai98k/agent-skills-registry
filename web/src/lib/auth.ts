@@ -1,7 +1,8 @@
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Auth callbacks run server-side — use internal Docker URL if available
+const API_BASE = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [

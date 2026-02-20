@@ -1,6 +1,9 @@
 version: "3.9"
 
 services:
+  # ============================================
+  # PostgreSQL 16
+  # ============================================
   postgres:
     image: postgres:16-alpine
     environment:
@@ -18,6 +21,9 @@ services:
       timeout: 5s
       retries: 5
 
+  # ============================================
+  # MinIO (S3-compatible object storage)
+  # ============================================
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -46,6 +52,60 @@ services:
       mc mb --ignore-existing local/skills;
       echo 'Bucket skills created';
       "
+
+  # ============================================
+  # FastAPI Backend
+  # ============================================
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://dev:devpass@postgres:5432/agentskills"
+      S3_ENDPOINT: "http://minio:9000"
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: skills
+      CORS_ORIGINS: '["http://localhost:3000","http://web:3000"]'
+      GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID:-}"
+      GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================
+  # Next.js Frontend
+  # ============================================
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:8000"
+    ports:
+      - "3000:3000"
+    environment:
+      # Server-side fetches go through Docker network
+      INTERNAL_API_URL: "http://api:8000"
+      # Client-side (browser) fetches go through host
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      NEXTAUTH_URL: "http://localhost:3000"
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:-change-me-in-production}"
+      GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID:-}"
+      GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET:-}"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

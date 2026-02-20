@@ -7,7 +7,12 @@ import type {
   UserResponse,
 } from "@/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Server-side (SSR/ISR): use Docker internal network URL if available
+// Client-side (browser): always use the public URL
+const isServer = typeof window === "undefined";
+const SERVER_API = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const CLIENT_API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = isServer ? SERVER_API : CLIENT_API;
 
 // --- Server-side fetches (used in Server Components with ISR) ---
 
