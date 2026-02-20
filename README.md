@@ -1,34 +1,39 @@
 # AgentSkills Registry
 
-AI Agent Skill Registry — CLI + API platform for publishing and pulling standardized skill bundles. Similar to npm or Docker Hub, but for AI Agent Skills.
+AI Agent Skill Registry — Web UI + CLI + API platform for publishing, discovering, and pulling standardized skill bundles. Similar to npm or Docker Hub, but for AI Agent Skills.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────┐
-│            docker-compose                │
-│                                          │
-│  ┌─────────────┐    ┌─────────────────┐  │
-│  │ PostgreSQL   │    │ MinIO (S3)      │  │
-│  │ port: 5432   │    │ API:  9000      │  │
-│  │              │    │ Console: 9001   │  │
-│  └──────┬───────┘    └──────┬──────────┘  │
-│         └─────────┬─────────┘             │
-│              ┌────┴────┐                  │
-│              │ FastAPI  │                  │
-│              │ port:8000│                  │
-│              └────┬─────┘                  │
-└───────────────────┼────────────────────────┘
-                    │
-             ┌──────┴──────┐
-             │   Go CLI    │
-             └─────────────┘
+┌─────────────────────────────────────────────────┐
+│                docker-compose                    │
+│                                                  │
+│  ┌─────────────┐  ┌──────────┐  ┌────────────┐  │
+│  │ PostgreSQL   │  │ MinIO    │  │ Next.js    │  │
+│  │ port: 5432   │  │ API:9000 │  │ port: 3000 │  │
+│  │              │  │ UI: 9001 │  │ (SSR)      │  │
+│  └──────┬───────┘  └────┬─────┘  └─────┬──────┘  │
+│         │               │              │         │
+│         └───────┬───────┘              │         │
+│            ┌────┴────┐                 │         │
+│            │ FastAPI  │◄───────────────┘         │
+│            │ port:8000│                          │
+│            └────┬─────┘                          │
+└─────────────────┼────────────────────────────────┘
+                  │
+       ┌──────────┼──────────┐
+       │          │          │
+┌──────┴──┐  ┌───┴──────┐  ┌┴──────────┐
+│ Browser  │  │  Go CLI  │  │ External  │
+└─────────┘  └──────────┘  └───────────┘
 ```
 
+- **Frontend**: Next.js 15+ (App Router, SSR, shadcn/ui) — `web/`
 - **Backend**: FastAPI (Python 3.12+) — `api/`
 - **CLI**: Go 1.22+ with Cobra — `cli/`
-- **Database**: PostgreSQL 16 (via Docker)
+- **Database**: PostgreSQL 16 with full-text search (`tsvector`)
 - **Object Storage**: MinIO S3-compatible (via Docker)
+- **Auth**: GitHub OAuth (Web) + Bearer Token (CLI/API)
 
 ## Quick Start
 
@@ -38,7 +43,7 @@ AI Agent Skill Registry — CLI + API platform for publishing and pulling standa
 docker compose up -d
 ```
 
-This starts PostgreSQL (port 5432) and MinIO (ports 9000/9001) with a seeded `dev` user.
+This starts PostgreSQL (port 5432) and MinIO (ports 9000/9001) with a seeded `dev` user and 10 default categories.
 
 ### 2. Start the API Server
 
@@ -48,7 +53,16 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Build the CLI
+### 3. Start the Web Frontend
+
+```bash
+cd web
+npm install
+npm run dev
+# → http://localhost:3000
+```
+
+### 4. Build the CLI
 
 ```bash
 cd cli
@@ -61,12 +75,24 @@ Or run directly:
 cd cli && go run main.go <command>
 ```
 
-### 4. Login
+### 5. Login (CLI)
 
 ```bash
 agentskills login
 # Enter API token: dev-token-12345
 ```
+
+---
+
+## Web UI
+
+The web frontend provides a browsing and discovery experience:
+
+- **Homepage**: Hero search bar, category grid, trending & latest skills
+- **Search**: Full-text search with category/tag filters and sort options
+- **Skill Detail**: Rendered SKILL.md, version history, install command, star button
+- **User Profiles**: Published skills, download/star counts
+- **GitHub OAuth**: Sign in with GitHub, API token management
 
 ---
 
@@ -100,161 +126,36 @@ agentskills --provider claude <command>
 Create a new skill skeleton directory with a provider-appropriate SKILL.md template.
 
 ```bash
-# Auto-detect provider from current directory
 agentskills init my-new-skill
-
-# Explicitly target Claude
 agentskills init my-new-skill --provider claude
 ```
-
-**Output:**
-
-```
-Created my-new-skill/
-  ├── SKILL.md        (template for claude)
-  ├── scripts/
-  ├── references/
-  └── assets/
-```
-
-The generated `SKILL.md` includes provider-specific fields:
-
-```yaml
----
-name: "my-new-skill"
-version: "0.1.0"
-description: "Brief description of what this skill does and when Claude should use it."
-author: ""
-tags: []
-compatibility: "Designed for Claude Code"
----
-
-# my-new-skill
-
-## When to use this skill
-Use this skill when...
-
-## Instructions
-1. Step one...
-2. Step two...
-
-## Examples
-[Concrete examples of using this skill]
-```
-
----
 
 ### `agentskills push [path]`
 
 Pack and upload a skill bundle to the registry.
 
 ```bash
-# Push from current directory
-agentskills push
-
-# Push a specific directory
 agentskills push ./my-skill
-
-# Push with explicit provider
-agentskills push ./my-skill --provider gemini
 ```
-
-**Output:**
-
-```
-Validating SKILL.md...        OK
-Provider: claude (auto-detected)
-Packing bundle...             OK (12.3 KB)
-Uploading my-skill@1.0.0...   OK
-Checksum: sha256:a1b2c3d4...
-
-Published my-skill@1.0.0 successfully.
-  Providers: claude
-```
-
-**What it does:**
-
-1. Validates `SKILL.md` frontmatter locally (name, version, description, author)
-2. Applies provider-specific name rules (e.g., Claude skills can't contain "anthropic" or "claude")
-3. Packs the directory as `.tar.gz` (excludes `.git/`, `node_modules/`, `__pycache__/`, `*.pyc`, `.env`, `.DS_Store`)
-4. Uploads to the registry API with provider metadata
-5. Verifies server checksum matches local checksum
-
----
 
 ### `agentskills pull <name>[@version]`
 
 Download and extract a skill bundle into the correct provider discovery path.
 
 ```bash
-# Pull latest version (auto-detect provider)
 agentskills pull code-review-agent
-
-# Pull a specific version
 agentskills pull code-review-agent@1.0.0
-
-# Pull for a specific provider
-agentskills pull code-review-agent --provider claude
-
-# Install to user-level path instead of project-level
 agentskills pull code-review-agent --provider claude --scope user
 ```
-
-**Output:**
-
-```
-Downloading code-review-agent@1.2.0...  OK
-Verifying checksum...          OK
-Provider: claude
-Extracted to ./.claude/skills/code-review-agent/
-```
-
-**Flags:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--scope` | `workspace` | `workspace` = project-level, `user` = user-level (`~/`) |
-| `--provider` | auto-detect | Target agent provider |
-
-**Install paths by provider and scope:**
-
-| Provider | `--scope workspace` | `--scope user` |
-|----------|---------------------|----------------|
-| claude | `./.claude/skills/{name}/` | `~/.claude/skills/{name}/` |
-| gemini | `./.agents/skills/{name}/` | `~/.agents/skills/{name}/` |
-| codex | `./.agents/skills/{name}/` | `~/.codex/skills/{name}/` |
-| copilot | `./.github/skills/{name}/` | `./{name}/` |
-| cursor | `./.cursor/skills/{name}/` | `~/.cursor/skills/{name}/` |
-| windsurf | `./.windsurf/skills/{name}/` | `~/.codeium/skills/{name}/` |
-| antigravity | `./.agent/skills/{name}/` | `~/.antigravity/skills/{name}/` |
-| generic | `./{name}/` | `./{name}/` |
-
----
 
 ### `agentskills search <keyword>`
 
 Search the registry for skills.
 
 ```bash
-# Search by keyword
 agentskills search code-review
-
-# Filter by provider
-agentskills search code-review --provider claude
-
-# Filter by tag
-agentskills search code-review --tag github
+agentskills search code-review --provider claude --tag github
 ```
-
-**Output:**
-
-```
-NAME                  VERSION  DOWNLOADS  PROVIDERS      DESCRIPTION
-code-review-agent     1.2.0    42         claude,gemini  PR code review skill
-code-review-lite      0.3.0    7          generic        Lightweight review helper
-```
-
----
 
 ### `agentskills login`
 
@@ -262,16 +163,6 @@ Save your API token to local config (`~/.agentskills/config.yaml`).
 
 ```bash
 agentskills login
-# Enter API token: ********
-# Token saved to ~/.agentskills/config.yaml
-```
-
-**Config file format** (`~/.agentskills/config.yaml`):
-
-```yaml
-api_url: "http://localhost:8000"
-token: "dev-token-12345"
-default_provider: "claude"  # optional
 ```
 
 ---
@@ -283,10 +174,10 @@ Every skill bundle requires a `SKILL.md` file with YAML frontmatter:
 ```yaml
 ---
 name: "code-review-agent"           # Required: [a-z0-9\-], 3-64 chars, no --
-version: "1.0.0"                    # Required: strict semver (MAJOR.MINOR.PATCH)
+version: "1.0.0"                    # Required: strict semver
 description: "PR code review skill" # Required: 1-256 chars
 author: "username"                  # Required: must match API token user
-tags:                               # Optional: max 10, each [a-z0-9\-], 1-32 chars
+tags:                               # Optional: max 10, each [a-z0-9\-]
   - code-review
   - github
 license: "MIT"                      # Optional: SPDX identifier
@@ -304,11 +195,16 @@ Your skill instructions in Markdown...
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/v1/skills/publish` | Bearer token | Upload a skill bundle (.tar.gz) |
-| `GET` | `/v1/skills/{name}` | No | Get skill info + latest version |
+| `POST` | `/v1/skills/publish` | Bearer Token | Upload a skill bundle (.tar.gz) |
+| `GET` | `/v1/skills/{name}` | Optional | Skill info + latest version |
 | `GET` | `/v1/skills/{name}/versions` | No | List all versions |
 | `GET` | `/v1/skills/{name}/versions/{version}/download` | No | Download a specific version |
-| `GET` | `/v1/skills?q=&tag=&provider=&page=&per_page=` | No | Search skills |
+| `GET` | `/v1/skills?q=&tag=&category=&sort=&page=&per_page=` | No | Search skills |
+| `POST` | `/v1/skills/{name}/star` | Bearer Token | Star a skill |
+| `DELETE` | `/v1/skills/{name}/star` | Bearer Token | Unstar a skill |
+| `GET` | `/v1/categories` | No | List categories + skill counts |
+| `POST` | `/v1/auth/github` | No | GitHub OAuth login/register |
+| `GET` | `/v1/users/{username}` | No | Public user profile |
 | `GET` | `/v1/health` | No | Health check |
 
 ---
@@ -319,62 +215,28 @@ Your skill instructions in Markdown...
 
 ```bash
 cd api && pytest -xvs
-# 77 tests (parser, publish, pull, search)
 ```
 
 ### Run CLI Tests
 
 ```bash
 cd cli && go test ./... -v
-# 21 tests (provider detection, name validation, install paths)
+```
+
+### Run Frontend Dev Server
+
+```bash
+cd web && npm run dev
 ```
 
 ### Infrastructure Commands
 
 ```bash
-# Start services
-docker compose up -d
-
-# Verify PostgreSQL
-docker compose exec postgres psql -U dev -d agentskills -c "SELECT COUNT(*) FROM users;"
-
-# Verify MinIO
-curl -s http://localhost:9000/minio/health/live
-
-# Tear down with volumes
-docker compose down -v
+docker compose up -d           # Start services
+docker compose down -v         # Tear down with volumes
 ```
 
 ---
-
-## End-to-End Example
-
-```bash
-# 1. Start infrastructure + API
-docker compose up -d
-cd api && uvicorn app.main:app --reload --port 8000 &
-
-# 2. Login
-cd cli && go run main.go login
-# Enter: dev-token-12345
-
-# 3. Create a new skill for Claude
-go run main.go init my-skill --provider claude
-
-# 4. Edit my-skill/SKILL.md (fill in description, author, etc.)
-
-# 5. Publish
-go run main.go push ./my-skill --provider claude
-
-# 6. Search for it
-go run main.go search my-skill
-
-# 7. Pull it into another project
-cd /tmp/other-project
-mkdir -p .claude
-go run /path/to/cli/main.go pull my-skill
-# → Extracted to ./.claude/skills/my-skill/
-```
 
 ## License
 
