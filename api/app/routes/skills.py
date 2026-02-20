@@ -6,8 +6,8 @@ from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_db, get_current_user, get_s3
-from app.models import Skill, SkillVersion, User
+from app.dependencies import get_db, get_current_user, get_optional_user, get_s3
+from app.models import Category, Skill, SkillVersion, Star, User
 from app.schemas import (
     ErrorResponse,
     PublishResponse,
@@ -17,7 +17,9 @@ from app.schemas import (
     SkillVersionDetail,
     SkillVersionSummary,
     SkillVersionsResponse,
+    StarResponse,
 )
+from app.services.markdown import render_markdown
 from app.services.parser import (
     ParseError,
     compute_checksum,
@@ -34,6 +36,7 @@ router = APIRouter()
 async def publish_skill(
     file: UploadFile = File(...),
     providers: Optional[str] = Form(default=None),
+    category: Optional[str] = Form(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     s3=Depends(get_s3),
@@ -68,13 +71,21 @@ async def publish_skill(
     except ParseError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Resolve category
+    category_id = None
+    if category:
+        cat_result = await db.execute(select(Category).where(Category.name == category))
+        cat = cat_result.scalar_one_or_none()
+        if cat:
+            category_id = cat.id
+
     # Check skill ownership
     result = await db.execute(select(Skill).where(Skill.name == parsed.name))
     skill = result.scalar_one_or_none()
 
     if skill is None:
         # Create new skill
-        skill = Skill(name=parsed.name, owner_id=user.id)
+        skill = Skill(name=parsed.name, owner_id=user.id, category_id=category_id)
         db.add(skill)
         await db.flush()
     elif skill.owner_id != user.id:
@@ -82,6 +93,10 @@ async def publish_skill(
             status_code=403,
             detail=f"Skill '{parsed.name}' is owned by another user",
         )
+    else:
+        # Update category if provided
+        if category_id:
+            skill.category_id = category_id
 
     # Check for duplicate version
     result = await db.execute(
@@ -109,6 +124,10 @@ async def publish_skill(
         "providers": provider_list,
     }
 
+    # Render SKILL.md body to HTML and cache
+    readme_html = render_markdown(parsed.body) if parsed.body else None
+    skill.readme_html = readme_html
+
     # Create version record
     version = SkillVersion(
         skill_id=skill.id,
@@ -118,6 +137,7 @@ async def publish_skill(
         checksum=checksum,
         size_bytes=len(file_bytes),
         providers=provider_list,
+        readme_raw=parsed.body or None,
     )
     db.add(version)
 
@@ -137,7 +157,11 @@ async def publish_skill(
 
 
 @router.get("/skills/{name}", response_model=SkillResponse)
-async def get_skill(name: str, db: AsyncSession = Depends(get_db)):
+async def get_skill(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
     result = await db.execute(
         select(Skill).where(Skill.name == name)
     )
@@ -145,9 +169,25 @@ async def get_skill(name: str, db: AsyncSession = Depends(get_db)):
     if skill is None:
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
 
-    # Get owner username
+    # Get owner
     owner_result = await db.execute(select(User).where(User.id == skill.owner_id))
     owner = owner_result.scalar_one()
+
+    # Get category name
+    category_name = None
+    if skill.category_id:
+        cat_result = await db.execute(select(Category).where(Category.id == skill.category_id))
+        cat = cat_result.scalar_one_or_none()
+        if cat:
+            category_name = cat.name
+
+    # Check if starred by current user
+    starred_by_me = False
+    if current_user:
+        star_result = await db.execute(
+            select(Star).where(Star.user_id == current_user.id, Star.skill_id == skill.id)
+        )
+        starred_by_me = star_result.scalar_one_or_none() is not None
 
     # Get latest version
     version_result = await db.execute(
@@ -173,7 +213,12 @@ async def get_skill(name: str, db: AsyncSession = Depends(get_db)):
     return SkillResponse(
         name=skill.name,
         owner=owner.username,
+        owner_avatar_url=owner.avatar_url,
         downloads=skill.downloads,
+        stars_count=skill.stars_count or 0,
+        starred_by_me=starred_by_me,
+        category=category_name,
+        readme_html=skill.readme_html,
         created_at=skill.created_at,
         latest_version=latest_detail,
     )
@@ -255,11 +300,72 @@ async def download_version(
     )
 
 
+@router.post("/skills/{name}/star", response_model=StarResponse)
+async def star_skill(
+    name: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Star a skill."""
+    result = await db.execute(select(Skill).where(Skill.name == name))
+    skill = result.scalar_one_or_none()
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+
+    # Check if already starred
+    existing = await db.execute(
+        select(Star).where(Star.user_id == user.id, Star.skill_id == skill.id)
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Already starred")
+
+    star = Star(user_id=user.id, skill_id=skill.id)
+    db.add(star)
+
+    # Increment stars_count
+    skill.stars_count = (skill.stars_count or 0) + 1
+
+    await db.commit()
+
+    return StarResponse(starred=True, stars_count=skill.stars_count)
+
+
+@router.delete("/skills/{name}/star", response_model=StarResponse)
+async def unstar_skill(
+    name: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unstar a skill."""
+    result = await db.execute(select(Skill).where(Skill.name == name))
+    skill = result.scalar_one_or_none()
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+
+    existing = await db.execute(
+        select(Star).where(Star.user_id == user.id, Star.skill_id == skill.id)
+    )
+    star = existing.scalar_one_or_none()
+    if star is None:
+        raise HTTPException(status_code=404, detail="Not starred")
+
+    await db.delete(star)
+
+    # Decrement stars_count
+    skill.stars_count = max((skill.stars_count or 0) - 1, 0)
+
+    await db.commit()
+
+    return StarResponse(starred=False, stars_count=skill.stars_count)
+
+
 @router.get("/skills", response_model=SearchResponse)
 async def search_skills(
     q: Optional[str] = Query(default=None),
     tag: Optional[str] = Query(default=None),
+    category: Optional[str] = Query(default=None),
     provider: Optional[str] = Query(default=None),
+    sort: Optional[str] = Query(default=None),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -269,26 +375,23 @@ async def search_skills(
 
     if q:
         pattern = f"%{q}%"
-        # Need to join with latest version to search descriptions
         query = query.where(Skill.name.ilike(pattern))
 
-    if tag or provider:
-        # Join with skill_versions to filter
-        subq = (
-            select(SkillVersion.skill_id)
-            .distinct()
-        )
-        conditions = []
-        if tag:
-            # Filter by tag in metadata JSONB
-            # For SQLite tests this needs special handling
-            pass
-        if provider:
-            # For PostgreSQL: providers @> ARRAY['claude']
-            # For SQLite: stored differently, but we handle at ORM level
-            pass
-        if conditions:
-            subq = subq.where(*conditions)
+    # Filter by category
+    if category:
+        cat_result = await db.execute(select(Category).where(Category.name == category))
+        cat = cat_result.scalar_one_or_none()
+        if cat:
+            query = query.where(Skill.category_id == cat.id)
+
+    # Determine sort order
+    sort_map = {
+        "downloads": Skill.downloads.desc(),
+        "stars": Skill.stars_count.desc(),
+        "newest": Skill.created_at.desc(),
+        "updated": Skill.updated_at.desc(),
+    }
+    order_clause = sort_map.get(sort, Skill.updated_at.desc())
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
@@ -298,7 +401,7 @@ async def search_skills(
     # Paginate
     offset = (page - 1) * per_page
     skills_result = await db.execute(
-        query.order_by(Skill.updated_at.desc()).offset(offset).limit(per_page)
+        query.order_by(order_clause).offset(offset).limit(per_page)
     )
     skills = skills_result.scalars().all()
 
@@ -308,6 +411,14 @@ async def search_skills(
         # Get owner
         owner_result = await db.execute(select(User).where(User.id == skill.owner_id))
         owner = owner_result.scalar_one()
+
+        # Get category name
+        category_name = None
+        if skill.category_id:
+            cat_r = await db.execute(select(Category).where(Category.id == skill.category_id))
+            cat_obj = cat_r.scalar_one_or_none()
+            if cat_obj:
+                category_name = cat_obj.name
 
         # Get latest version
         latest_result = await db.execute(
@@ -338,8 +449,11 @@ async def search_skills(
                 name=skill.name,
                 description=latest.meta.get("description", ""),
                 owner=owner.username,
+                owner_avatar_url=owner.avatar_url,
                 downloads=skill.downloads,
+                stars_count=skill.stars_count or 0,
                 latest_version=latest.version,
+                category=category_name,
                 updated_at=skill.updated_at,
                 tags=latest.meta.get("tags", []),
                 providers=latest.providers or ["generic"],

@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     s3_bucket: str = "skills"
     s3_region: str = "us-east-1"
 
+    # GitHub OAuth
+    github_client_id: str = ""
+    github_client_secret: str = ""
+
+    # CORS (allow Next.js frontend)
+    cors_origins: list[str] = ["http://localhost:3000"]
+
     # App
     max_bundle_size: int = 50 * 1024 * 1024  # 50MB
     max_decompressed_size: int = 200 * 1024 * 1024  # 200MB

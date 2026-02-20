@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 import boto3
 from fastapi import Depends, Header, HTTPException
@@ -39,3 +39,17 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return user
+
+
+async def get_optional_user(
+    authorization: Optional[str] = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    """Return current user if valid auth header is present, None otherwise."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[7:]
+    if not token:
+        return None
+    result = await db.execute(select(User).where(User.api_token == token))
+    return result.scalar_one_or_none()
