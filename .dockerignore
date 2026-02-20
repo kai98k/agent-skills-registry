@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Dependencies (will be installed inside image)
+web/node_modules
+web/.next
+cli/
+
+# Environment files
+.env
+.env.*
+!.env.example
+api/.env
+web/.env.local
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Python
+__pycache__
+*.pyc
+api/.pytest_cache
+api/tests/
+
+# Reference docs (not needed in image)
+reference/
