@@ -63,22 +63,147 @@ sudo mv agentskills-linux-amd64 /usr/local/bin/agentskills
 
 ### 方式二：Docker（推薦用於 Server）
 
+**簡易模式** — SQLite + 本地儲存，零配置，建立 `docker-compose.yml`：
+
+```yaml
+# docker-compose.yml
+services:
+  agentskills:
+    image: ghcr.io/liuyukai/agentskills-server:latest
+    # 或使用本地 build:
+    # build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - data:/data
+    # 預設 SQLite + 本地檔案系統，不需要任何環境變數
+
+volumes:
+  data:
+```
+
 ```bash
-# 最簡單的啟動方式 — SQLite + 本地儲存，零配置
 docker compose up -d
+curl http://localhost:8000/v1/health
+# {"status":"ok","database":"connected","storage":"connected"}
+```
+
+**生產模式** — PostgreSQL + MinIO，建立 `docker-compose.prod.yml`：
+
+```yaml
+# docker-compose.prod.yml
+services:
+  # ── PostgreSQL ──────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agentskills
+      POSTGRES_USER: prod
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prod -d agentskills"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (S3 相容儲存) ─────────────────────
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Web Console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO 初始化 (自動建立 Bucket) ──────────
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_USER} $${MINIO_PASSWORD};
+      mc mb --ignore-existing local/skills;
+      echo 'Bucket [skills] created';
+      "
+
+  # ── AgentSkills Server ──────────────────────
+  agentskills:
+    image: ghcr.io/liuyukai/agentskills-server:latest
+    # 或使用本地 build:
+    # build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AGENTSKILLS_DB_DRIVER: postgres
+      AGENTSKILLS_DB_DSN: postgres://prod:${PG_PASSWORD}@postgres:5432/agentskills?sslmode=disable
+      AGENTSKILLS_STORAGE_DRIVER: s3
+      AGENTSKILLS_S3_ENDPOINT: http://minio:9000
+      AGENTSKILLS_S3_ACCESS_KEY: ${MINIO_USER}
+      AGENTSKILLS_S3_SECRET_KEY: ${MINIO_PASSWORD}
+      AGENTSKILLS_S3_BUCKET: skills
+    command: ["serve", "--port", "8000"]
+
+volumes:
+  pgdata:
+  miniodata:
+```
+
+```bash
+# 建立 .env 檔案設定密碼
+cat > .env << 'EOF'
+PG_PASSWORD=your-secure-password
+MINIO_USER=minioadmin
+MINIO_PASSWORD=minioadmin
+EOF
+
+# 啟動
+docker compose -f docker-compose.prod.yml up -d
 
 # 驗證
 curl http://localhost:8000/v1/health
 ```
 
-或使用生產模式（PostgreSQL + MinIO）：
+**Dockerfile**（若要從原始碼自行 build）：
 
-```bash
-export PG_PASSWORD=your-secure-password
-export MINIO_USER=minioadmin
-export MINIO_PASSWORD=minioadmin
+```dockerfile
+# === Build Stage ===
+FROM golang:1.22-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -tags server -ldflags="-s -w" -o /agentskills-server .
 
-docker compose -f docker-compose.prod.yml up -d
+# === Runtime Stage (最終鏡像 ~25MB) ===
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=builder /agentskills-server /usr/local/bin/agentskills-server
+RUN mkdir -p /data/bundles
+VOLUME ["/data"]
+EXPOSE 8000
+ENTRYPOINT ["agentskills-server"]
+CMD ["serve", "--port", "8000"]
 ```
 
 ### 方式三：從原始碼編譯
@@ -285,14 +410,15 @@ license: "MIT"                      # 選填, SPDX identifier
 ### 場景 B：團隊 / 小型組織
 
 ```bash
-# Docker 一鍵啟動
+# 使用上方「簡易模式」的 docker-compose.yml
 docker compose up -d
-# 25MB 鏡像，自動初始化
+# 25MB 鏡像，SQLite + 本地儲存，自動初始化
 ```
 
 ### 場景 C：生產環境
 
 ```bash
+# 使用上方「生產模式」的 docker-compose.prod.yml
 # PostgreSQL + MinIO，完整生產配置
 docker compose -f docker-compose.prod.yml up -d
 ```
