@@ -1,0 +1,193 @@
+# 當推送 tag (v*) 時，自動：
+# 1. 執行測試
+# 2. 跨平台編譯 CLI + Server binary
+# 3. 建置 Docker 鏡像並推送至 Docker Hub + GitHub Container Registry
+# 4. 建立 GitHub Release 並上傳 binary
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  REGISTRY_DOCKERHUB: docker.io
+  REGISTRY_GHCR: ghcr.io
+  IMAGE_NAME: kai98k/agentskills-server
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ── 測試 ──────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run tests
+        run: go test -v -race -tags server ./...
+
+  # ── 跨平台編譯 Binary ────────────────────────
+  build-binaries:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # CLI binaries
+          - goos: linux
+            goarch: amd64
+            binary: agentskills-linux-amd64
+            tags: ""
+          - goos: linux
+            goarch: arm64
+            binary: agentskills-linux-arm64
+            tags: ""
+          - goos: darwin
+            goarch: amd64
+            binary: agentskills-darwin-amd64
+            tags: ""
+          - goos: darwin
+            goarch: arm64
+            binary: agentskills-darwin-arm64
+            tags: ""
+          - goos: windows
+            goarch: amd64
+            binary: agentskills-windows-amd64.exe
+            tags: ""
+          # Server binaries
+          - goos: linux
+            goarch: amd64
+            binary: agentskills-server-linux-amd64
+            tags: server
+          - goos: linux
+            goarch: arm64
+            binary: agentskills-server-linux-arm64
+            tags: server
+          - goos: darwin
+            goarch: amd64
+            binary: agentskills-server-darwin-amd64
+            tags: server
+          - goos: darwin
+            goarch: arm64
+            binary: agentskills-server-darwin-arm64
+            tags: server
+          - goos: windows
+            goarch: amd64
+            binary: agentskills-server-windows-amd64.exe
+            tags: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}"
+
+          if [ -n "${{ matrix.tags }}" ]; then
+            go build -tags "${{ matrix.tags }}" -ldflags "${LDFLAGS}" -o ${{ matrix.binary }} .
+          else
+            go build -ldflags "${LDFLAGS}" -o ${{ matrix.binary }} .
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: ${{ matrix.binary }}
+
+  # ── Docker 鏡像 (Docker Hub + GHCR) ─────────
+  build-docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker Buildx (多平台 build)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 登入 Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_DOCKERHUB }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 登入 GitHub Container Registry
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 產生 tag 和 label
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # 建置並推送 (同時推到兩個 registry)
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── GitHub Release ───────────────────────────
+  release:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums-sha256.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*

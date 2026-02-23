@@ -61,7 +61,27 @@ sudo mv agentskills-linux-amd64 /usr/local/bin/agentskills
 # 或加入 PATH 環境變數
 ```
 
-### 方式二：Docker（推薦用於 Server）
+### 方式二：Docker 鏡像（推薦用於 Server）
+
+鏡像同時發布至 Docker Hub 和 GitHub Container Registry：
+
+```bash
+# Docker Hub
+docker pull kai98k/agentskills-server:latest
+
+# GitHub Container Registry
+docker pull ghcr.io/kai98k/agentskills-server:latest
+```
+
+可用的 image tag：
+
+| Tag | 說明 |
+|-----|------|
+| `latest` | 最新穩定版 |
+| `v1.0.0` | 指定版本 |
+| `sha-abc1234` | 指定 commit |
+
+---
 
 **簡易模式** — SQLite + 本地儲存，零配置，建立 `docker-compose.yml`：
 
@@ -69,7 +89,11 @@ sudo mv agentskills-linux-amd64 /usr/local/bin/agentskills
 # docker-compose.yml
 services:
   agentskills:
-    build: .
+    image: kai98k/agentskills-server:latest
+    # 或使用 ghcr.io:
+    # image: ghcr.io/kai98k/agentskills-server:latest
+    # 或從原始碼 build:
+    # build: .
     ports:
       - "8000:8000"
     volumes:
@@ -85,6 +109,8 @@ docker compose up -d
 curl http://localhost:8000/v1/health
 # {"status":"ok","database":"connected","storage":"connected"}
 ```
+
+---
 
 **生產模式** — PostgreSQL + MinIO，建立 `docker-compose.prod.yml`：
 
@@ -142,7 +168,11 @@ services:
 
   # ── AgentSkills Server ──────────────────────
   agentskills:
-    build: .
+    image: kai98k/agentskills-server:latest
+    # 或使用 ghcr.io:
+    # image: ghcr.io/kai98k/agentskills-server:latest
+    # 或從原始碼 build:
+    # build: .
     ports:
       - "8000:8000"
     depends_on:
@@ -179,6 +209,8 @@ docker compose -f docker-compose.prod.yml up -d
 # 驗證
 curl http://localhost:8000/v1/health
 ```
+
+---
 
 **Dockerfile**（若要從原始碼自行 build）：
 
@@ -476,6 +508,62 @@ docker compose up -d
 ```
 
 詳細設計規格請參考 [`reference/SDD.md`](reference/SDD.md)。
+
+---
+
+## CI/CD 自動發布
+
+專案使用 GitHub Actions 自動化建置與發布：
+
+### 自動觸發流程
+
+| 事件 | 觸發的 Workflow | 動作 |
+|------|----------------|------|
+| Push / PR 到 `main` | `ci.yml` | 執行測試 + 驗證 build + 驗證 Docker build |
+| 推送 tag `v*` | `release.yml` | 測試 → 跨平台編譯 → Docker 鏡像推送 → GitHub Release |
+
+### Release 流程
+
+```bash
+# 1. 打 tag
+git tag v1.0.0
+git push origin v1.0.0
+
+# 2. GitHub Actions 自動：
+#    - 執行測試
+#    - 編譯 10 個 binary (5 平台 x CLI/Server)
+#    - 建置 Docker 鏡像 (linux/amd64 + linux/arm64)
+#    - 推送鏡像至 Docker Hub + GitHub Container Registry
+#    - 建立 GitHub Release + 上傳 binary + SHA256 checksum
+```
+
+### 需要設定的 GitHub Secrets
+
+在 GitHub repo → Settings → Secrets and variables → Actions 中設定：
+
+| Secret | 說明 | 取得方式 |
+|--------|------|---------|
+| `DOCKERHUB_USERNAME` | Docker Hub 帳號 | [hub.docker.com](https://hub.docker.com) 註冊 |
+| `DOCKERHUB_TOKEN` | Docker Hub Access Token | Docker Hub → Account Settings → Security → New Access Token |
+| `GITHUB_TOKEN` | GitHub Token (自動提供) | 不需要手動設定，GitHub Actions 自帶 |
+
+### Docker 鏡像 Tag 規則
+
+推送 `v1.2.3` tag 後，會自動產生以下 Docker image tag：
+
+```
+kai98k/agentskills-server:1.2.3
+kai98k/agentskills-server:1.2
+kai98k/agentskills-server:1
+kai98k/agentskills-server:latest
+kai98k/agentskills-server:sha-abc1234
+
+ghcr.io/kai98k/agentskills-server:1.2.3
+ghcr.io/kai98k/agentskills-server:1.2
+ghcr.io/kai98k/agentskills-server:1
+ghcr.io/kai98k/agentskills-server:latest
+ghcr.io/kai98k/agentskills-server:sha-abc1234
+```
 
 ---
 
