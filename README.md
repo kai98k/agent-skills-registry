@@ -1,48 +1,86 @@
 # AgentSkills
 
-AI Agent Skill 的集中式 Registry 平台 — 類似 npm 或 Docker Hub，但專為 AI Agent Skills 設計。
+A centralized Registry platform for AI Agent Skills — like npm or Docker Hub, but purpose-built for Agent Skills.
 
-開發者可透過 CLI 工具上傳（push）與下載（pull）標準化的 Skill Bundle，平台負責版本控制、Metadata 解析與檔案儲存。
+Developers can publish (push) and download (pull) standardized Skill Bundles via a CLI tool. The platform handles version control, metadata parsing, and file storage.
 
----
-
-## 功能一覽
-
-| 功能 | 說明 |
-|------|------|
-| **Skill 發布 (push)** | 將本地 Skill 目錄打包為 `.tar.gz` 並上傳至 Registry |
-| **Skill 下載 (pull)** | 從 Registry 下載指定 Skill（支援指定版本或自動取最新版） |
-| **Skill 搜尋 (search)** | 以關鍵字或 tag 搜尋平台上的 Skills |
-| **Skill 初始化 (init)** | 快速建立 Skill 骨架目錄與模板 |
-| **版本控制** | 嚴格 Semantic Versioning，每個版本 immutable 不可覆寫 |
-| **Checksum 驗證** | SHA-256 校驗確保上傳與下載的完整性 |
-| **雙模式資料庫** | SQLite（嵌入式，零配置）或 PostgreSQL（生產環境） |
-| **雙模式儲存** | 本地檔案系統（零配置）或 S3/MinIO（生產環境） |
-| **跨平台** | 支援 Linux / macOS / Windows，單一 binary 零依賴 |
-| **Docker 部署** | 25MB 極小鏡像，一鍵啟動 |
+**[繁體中文版 README](README.zh-TW.md)**
 
 ---
 
-## 安裝方式
+## Why AgentSkills Registry?
 
-### 方式一：下載預編譯 Binary（推薦）
+### The problem: Skills are everywhere, but nowhere to find
 
-從 [Releases](../../releases) 頁面下載對應平台的 binary：
+AI Agent Skills — modular instruction sets that turn general-purpose agents into domain specialists — are rapidly becoming a core building block of the AI ecosystem. Anthropic's Claude, Google's Gemini, and others have all adopted the [Agent Skills specification](https://agentskills.io) as a standard way to extend agent capabilities.
 
-**CLI（給 Skill 開發者）：**
+But today, sharing and discovering Skills is fragmented:
 
-| 平台 | 檔案 |
-|------|------|
+- **No central discovery** — Skills are scattered across GitHub repos, blog posts, and internal wikis. There's no single place to search for "a code-review skill" or "a PDF-processing skill."
+- **No versioning guarantee** — Without a registry enforcing immutable semantic versions, a skill you depend on could silently change or disappear.
+- **No integrity verification** — Downloading a `.tar.gz` from a random URL offers no checksum validation. You can't be sure the bundle hasn't been tampered with.
+- **Platform silos** — Claude Code stores skills on the local filesystem, the Claude API uses upload endpoints, and Claude.ai uses zip uploads. Each surface is an island with no cross-platform sharing.
+
+### The solution: a package registry for the AI age
+
+AgentSkills Registry solves these problems the same way npm solved them for JavaScript and Docker Hub solved them for container images:
+
+| What npm did for JS | What AgentSkills does for Agent Skills |
+|---------------------|---------------------------------------|
+| `npm publish` / `npm install` | `agentskills push` / `agentskills pull` |
+| package.json + semver | SKILL.md frontmatter + strict semver |
+| SHA integrity check | SHA-256 checksum on every bundle |
+| npmjs.com search | `agentskills search` by keyword & tag |
+| Scoped packages (`@org/pkg`) | Author-scoped skills (owner = API token holder) |
+
+**In short:** AgentSkills Registry is the missing infrastructure layer that turns ad-hoc skill files into a proper ecosystem — discoverable, versioned, verified, and shareable.
+
+### Who is this for?
+
+- **Skill authors** who want to publish reusable skills for the community
+- **AI developers** who want to find and integrate battle-tested skills instead of writing from scratch
+- **Teams & organizations** who want a private registry to share internal skills across projects
+- **Platform builders** integrating skills into their own agent frameworks
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Skill Publish (push)** | Pack a local Skill directory into `.tar.gz` and upload to the Registry |
+| **Skill Download (pull)** | Download a specific Skill (supports version pinning or latest) |
+| **Skill Search (search)** | Search by keyword or tag |
+| **Skill Init (init)** | Scaffold a new Skill directory with templates |
+| **Version Control** | Strict Semantic Versioning; every version is immutable |
+| **Checksum Verification** | SHA-256 ensures upload/download integrity |
+| **Dual-Mode Database** | SQLite (embedded, zero-config) or PostgreSQL (production) |
+| **Dual-Mode Storage** | Local filesystem (zero-config) or S3/MinIO (production) |
+| **Cross-Platform** | Linux / macOS / Windows, single binary with zero dependencies |
+| **Docker Deployment** | 25 MB minimal image, one-command startup |
+
+---
+
+## Installation
+
+### Option 1: Pre-compiled Binaries (Recommended)
+
+Download from the [Releases](../../releases) page.
+
+**CLI (for Skill developers):**
+
+| Platform | File |
+|----------|------|
 | Linux (x64) | `agentskills-linux-amd64` |
 | Linux (ARM64) | `agentskills-linux-arm64` |
 | macOS (Intel) | `agentskills-darwin-amd64` |
 | macOS (Apple Silicon) | `agentskills-darwin-arm64` |
 | Windows (x64) | `agentskills-windows-amd64.exe` |
 
-**Server（給 Registry 管理員）：**
+**Server (for Registry administrators):**
 
-| 平台 | 檔案 |
-|------|------|
+| Platform | File |
+|----------|------|
 | Linux (x64) | `agentskills-server-linux-amd64` |
 | Linux (ARM64) | `agentskills-server-linux-arm64` |
 | macOS (Intel) | `agentskills-server-darwin-amd64` |
@@ -50,20 +88,19 @@ AI Agent Skill 的集中式 Registry 平台 — 類似 npm 或 Docker Hub，但�
 | Windows (x64) | `agentskills-server-windows-amd64.exe` |
 
 ```bash
-# Linux / macOS 範例
+# Linux / macOS
 curl -LO https://github.com/liuyukai/agentskills/releases/latest/download/agentskills-linux-amd64
 chmod +x agentskills-linux-amd64
 sudo mv agentskills-linux-amd64 /usr/local/bin/agentskills
 ```
 
 ```powershell
-# Windows — 下載 .exe 後直接執行，不需要安裝
-# 或加入 PATH 環境變數
+# Windows — download the .exe and run directly, no installation needed
 ```
 
-### 方式二：Docker 鏡像（推薦用於 Server）
+### Option 2: Docker Image (Recommended for Server)
 
-鏡像同時發布至 Docker Hub 和 GitHub Container Registry：
+Images are published to both Docker Hub and GitHub Container Registry:
 
 ```bash
 # Docker Hub
@@ -73,32 +110,32 @@ docker pull kai98k/agentskills-server:latest
 docker pull ghcr.io/kai98k/agentskills-server:latest
 ```
 
-可用的 image tag：
+Available image tags:
 
-| Tag | 說明 |
-|-----|------|
-| `latest` | 最新穩定版 |
-| `v1.0.0` | 指定版本 |
-| `sha-abc1234` | 指定 commit |
+| Tag | Description |
+|-----|-------------|
+| `latest` | Latest stable release |
+| `v1.0.0` | Specific version |
+| `sha-abc1234` | Specific commit |
 
 ---
 
-**簡易模式** — SQLite + 本地儲存，零配置，建立 `docker-compose.yml`：
+**Simple mode** — SQLite + local storage, zero-config. Create a `docker-compose.yml`:
 
 ```yaml
 # docker-compose.yml
 services:
   agentskills:
     image: kai98k/agentskills-server:latest
-    # 或使用 ghcr.io:
+    # Or use ghcr.io:
     # image: ghcr.io/kai98k/agentskills-server:latest
-    # 或從原始碼 build:
+    # Or build from source:
     # build: .
     ports:
       - "8000:8000"
     volumes:
       - data:/data
-    # 預設 SQLite + 本地檔案系統，不需要任何環境變數
+    # Defaults to SQLite + local filesystem, no env vars needed
 
 volumes:
   data:
@@ -112,7 +149,7 @@ curl http://localhost:8000/v1/health
 
 ---
 
-**生產模式** — PostgreSQL + MinIO，建立 `docker-compose.prod.yml`：
+**Production mode** — PostgreSQL + MinIO. Create a `docker-compose.prod.yml`:
 
 ```yaml
 # docker-compose.prod.yml
@@ -135,7 +172,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── MinIO (S3 相容儲存) ─────────────────────
+  # ── MinIO (S3-compatible storage) ───────────
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -153,7 +190,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── MinIO 初始化 (自動建立 Bucket) ──────────
+  # ── MinIO Init (auto-create bucket) ─────────
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -169,9 +206,9 @@ services:
   # ── AgentSkills Server ──────────────────────
   agentskills:
     image: kai98k/agentskills-server:latest
-    # 或使用 ghcr.io:
+    # Or use ghcr.io:
     # image: ghcr.io/kai98k/agentskills-server:latest
-    # 或從原始碼 build:
+    # Or build from source:
     # build: .
     ports:
       - "8000:8000"
@@ -196,23 +233,23 @@ volumes:
 ```
 
 ```bash
-# 建立 .env 檔案設定密碼
+# Create .env file
 cat > .env << 'EOF'
 PG_PASSWORD=your-secure-password
 MINIO_USER=minioadmin
 MINIO_PASSWORD=minioadmin
 EOF
 
-# 啟動
+# Start
 docker compose -f docker-compose.prod.yml up -d
 
-# 驗證
+# Verify
 curl http://localhost:8000/v1/health
 ```
 
 ---
 
-**Dockerfile**（若要從原始碼自行 build）：
+**Dockerfile** (to build from source):
 
 ```dockerfile
 # === Build Stage ===
@@ -223,7 +260,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -tags server -ldflags="-s -w" -o /agentskills-server .
 
-# === Runtime Stage (最終鏡像 ~25MB) ===
+# === Runtime Stage (~25MB) ===
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /agentskills-server /usr/local/bin/agentskills-server
@@ -234,75 +271,75 @@ ENTRYPOINT ["agentskills-server"]
 CMD ["serve", "--port", "8000"]
 ```
 
-### 方式三：從原始碼編譯
+### Option 3: Build from Source
 
-需要 Go 1.22+：
+Requires Go 1.22+:
 
 ```bash
 git clone https://github.com/liuyukai/agentskills.git
 cd agentskills
 
-# 編譯 CLI
+# Build CLI
 make build-cli
 # → bin/agentskills
 
-# 編譯 Server
+# Build Server
 make build-server
 # → bin/agentskills-server
 
-# 編譯所有平台
+# Build all platforms
 make build-all
-# → bin/ 下包含 Linux / macOS / Windows 版本
+# → bin/ contains Linux / macOS / Windows binaries
 ```
 
 ---
 
-## 快速開始
+## Quick Start
 
-### 1. 啟動 Server
+### 1. Start the Server
 
 ```bash
-# 方式 A: 直接執行（SQLite + 本地儲存，零配置）
+# Option A: Direct execution (SQLite + local storage, zero-config)
 ./agentskills-server serve
 
-# 方式 B: 指定 port
+# Option B: Custom port
 ./agentskills-server serve --port 9000
 
-# 方式 C: 使用 PostgreSQL + S3
+# Option C: PostgreSQL + S3
 ./agentskills-server serve \
   --db postgres://user:pass@localhost:5432/agentskills \
   --storage s3://localhost:9000
 
-# 方式 D: Docker
+# Option D: Docker
 docker compose up -d
 ```
 
-Server 啟動後預設監聽 `http://localhost:8000`。
+The server listens on `http://localhost:8000` by default.
 
-### 2. 設定 CLI
+### 2. Configure the CLI
 
 ```bash
-# 設定 Server 位址和 API Token
+# Set server URL and API token
 agentskills login
 # Enter API URL: http://localhost:8000
 # Enter API token: ********
 # Token saved to ~/.agentskills/config.yaml
 ```
 
-預設開發帳號：token 為 `dev-token-12345`
+Default dev account token: `dev-token-12345`
 
-### 3. 建立第一個 Skill
+### 3. Create Your First Skill
 
 ```bash
-# 初始化 Skill 骨架
+# Scaffold a new Skill
 agentskills init my-first-skill
 
-# 編輯 SKILL.md，填入描述和指令內容
+# Edit SKILL.md with your description and instructions
 cd my-first-skill
-# ... 編輯 SKILL.md ...
+# ... edit SKILL.md ...
 ```
 
-### 4. 發布 Skill
+### 4. Publish a Skill
 
 ```bash
 agentskills push ./my-first-skill
@@ -315,17 +352,17 @@ agentskills push ./my-first-skill
 # Published my-first-skill@0.1.0 successfully.
 ```
 
-### 5. 下載 Skill
+### 5. Download a Skill
 
 ```bash
-# 下載最新版
+# Download latest version
 agentskills pull my-first-skill
 
-# 下載指定版本
+# Download specific version
 agentskills pull my-first-skill@0.1.0
 ```
 
-### 6. 搜尋 Skill
+### 6. Search for Skills
 
 ```bash
 agentskills search code-review
@@ -337,219 +374,216 @@ agentskills search code-review
 
 ---
 
-## CLI 指令速查
+## CLI Reference
 
-| 指令 | 說明 | 範例 |
-|------|------|------|
-| `agentskills init [name]` | 建立 Skill 骨架 | `agentskills init my-skill` |
-| `agentskills push [path]` | 打包上傳 Skill | `agentskills push ./my-skill` |
-| `agentskills pull <name>[@ver]` | 下載 Skill | `agentskills pull my-skill@1.0.0` |
-| `agentskills search <keyword>` | 搜尋 Skills | `agentskills search code-review` |
-| `agentskills login` | 設定 API Token | `agentskills login` |
-| `agentskills version` | 顯示版本 | `agentskills version` |
+| Command | Description | Example |
+|---------|-------------|---------|
+| `agentskills init [name]` | Scaffold a Skill | `agentskills init my-skill` |
+| `agentskills push [path]` | Pack and upload a Skill | `agentskills push ./my-skill` |
+| `agentskills pull <name>[@ver]` | Download a Skill | `agentskills pull my-skill@1.0.0` |
+| `agentskills search <keyword>` | Search for Skills | `agentskills search code-review` |
+| `agentskills login` | Set API token | `agentskills login` |
+| `agentskills version` | Show version | `agentskills version` |
 
 ---
 
-## Server 指令速查
+## Server Reference
 
-| 指令 | 說明 | 範例 |
-|------|------|------|
-| `agentskills-server serve` | 啟動 HTTP Server | `agentskills-server serve --port 8000` |
-| `agentskills-server migrate` | 執行資料庫 migration | `agentskills-server migrate` |
-| `agentskills-server version` | 顯示版本 | `agentskills-server version` |
+| Command | Description | Example |
+|---------|-------------|---------|
+| `agentskills-server serve` | Start HTTP server | `agentskills-server serve --port 8000` |
+| `agentskills-server migrate` | Run database migrations | `agentskills-server migrate` |
+| `agentskills-server version` | Show version | `agentskills-server version` |
 
-### Server 環境變數
+### Environment Variables
 
-| 變數 | 預設值 | 說明 |
-|------|--------|------|
-| `AGENTSKILLS_PORT` | `8000` | HTTP 監聽 port |
-| `AGENTSKILLS_DB_DRIVER` | `sqlite` | 資料庫類型：`sqlite` 或 `postgres` |
-| `AGENTSKILLS_DB_DSN` | `./data/agentskills.db` | 資料庫連線字串 |
-| `AGENTSKILLS_STORAGE_DRIVER` | `local` | 儲存類型：`local` 或 `s3` |
-| `AGENTSKILLS_STORAGE_PATH` | `./data/bundles` | 本地儲存路徑 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENTSKILLS_PORT` | `8000` | HTTP listen port |
+| `AGENTSKILLS_DB_DRIVER` | `sqlite` | Database type: `sqlite` or `postgres` |
+| `AGENTSKILLS_DB_DSN` | `./data/agentskills.db` | Database connection string |
+| `AGENTSKILLS_STORAGE_DRIVER` | `local` | Storage type: `local` or `s3` |
+| `AGENTSKILLS_STORAGE_PATH` | `./data/bundles` | Local storage path |
 | `AGENTSKILLS_S3_ENDPOINT` | - | S3/MinIO endpoint |
 | `AGENTSKILLS_S3_ACCESS_KEY` | - | S3 access key |
 | `AGENTSKILLS_S3_SECRET_KEY` | - | S3 secret key |
-| `AGENTSKILLS_S3_BUCKET` | `skills` | S3 bucket 名稱 |
-| `AGENTSKILLS_MAX_BUNDLE_SIZE` | `52428800` | Bundle 最大大小 (bytes, 預設 50MB) |
+| `AGENTSKILLS_S3_BUCKET` | `skills` | S3 bucket name |
+| `AGENTSKILLS_MAX_BUNDLE_SIZE` | `52428800` | Max bundle size in bytes (default 50 MB) |
 
 ---
 
-## API 端點
+## API Endpoints
 
 Base URL: `http://localhost:8000/v1`
 
-| Method | 端點 | 說明 | 認證 |
-|--------|------|------|------|
-| `GET` | `/v1/health` | 健康檢查 | 不需要 |
-| `POST` | `/v1/skills/publish` | 上傳 Skill Bundle | Bearer Token |
-| `GET` | `/v1/skills/{name}` | 取得 Skill 資訊 + 最新版本 | 不需要 |
-| `GET` | `/v1/skills/{name}/versions` | 列出所有版本 | 不需要 |
-| `GET` | `/v1/skills/{name}/versions/{ver}/download` | 下載指定版本 | 不需要 |
-| `GET` | `/v1/skills?q=keyword&tag=tag` | 搜尋 Skills | 不需要 |
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `GET` | `/v1/health` | Health check | No |
+| `POST` | `/v1/skills/publish` | Upload a Skill bundle | Bearer Token |
+| `GET` | `/v1/skills/{name}` | Get Skill info + latest version | No |
+| `GET` | `/v1/skills/{name}/versions` | List all versions | No |
+| `GET` | `/v1/skills/{name}/versions/{ver}/download` | Download a specific version | No |
+| `GET` | `/v1/skills?q=keyword&tag=tag` | Search Skills | No |
 
-認證方式：HTTP Header `Authorization: Bearer <your-token>`
+Auth: `Authorization: Bearer <your-token>`
 
 ---
 
-## Skill Bundle 格式
+## Skill Bundle Format
 
-每個 Skill 是一個目錄，核心是 `SKILL.md` 檔案：
+Each Skill is a directory with a required `SKILL.md` file:
 
 ```
 my-skill/
-├── SKILL.md         (必填) YAML Frontmatter + Markdown 指令
-├── scripts/         (選填) Agent 可呼叫的腳本
-├── references/      (選填) 參考文件
-└── assets/          (選填) 靜態資源
+├── SKILL.md         (required) YAML frontmatter + Markdown instructions
+├── scripts/         (optional) Scripts the agent can execute
+├── references/      (optional) Reference documents
+└── assets/          (optional) Static resources
 ```
 
-### SKILL.md 格式
+### SKILL.md Format
 
 ```yaml
 ---
-name: "my-skill"                    # 必填, 全域唯一, [a-z0-9-], 3-64 字元
-version: "1.0.0"                    # 必填, 嚴格 semver
-description: "My awesome skill"     # 必填, 最長 256 字元
-author: "username"                  # 必填, 與 API Token 帳號一致
-tags:                               # 選填, 最多 10 個
+name: "my-skill"                    # required, globally unique, [a-z0-9-], 3-64 chars
+version: "1.0.0"                    # required, strict semver
+description: "My awesome skill"     # required, max 256 chars
+author: "username"                  # required, must match API token owner
+tags:                               # optional, max 10
   - tag1
   - tag2
-license: "MIT"                      # 選填, SPDX identifier
+license: "MIT"                      # optional, SPDX identifier
 ---
 
 # My Skill
 
-這裡寫 Agent 的指令內容...
+Agent instructions go here...
 ```
 
 ---
 
-## 部署場景
+## Deployment Scenarios
 
-### 場景 A：個人開發者（最簡單）
+### Scenario A: Individual Developer (Simplest)
 
 ```bash
-# 下載 binary → 啟動 → 完成
+# Download binary → start → done
 ./agentskills-server serve
-# 資料存在 ./data/ 目錄，SQLite + 本地檔案，零配置
+# Data stored in ./data/, SQLite + local files, zero-config
 ```
 
-### 場景 B：團隊 / 小型組織
+### Scenario B: Team / Small Org
 
 ```bash
-# 使用上方「簡易模式」的 docker-compose.yml
+# Use the "Simple mode" docker-compose.yml above
 docker compose up -d
-# 25MB 鏡像，SQLite + 本地儲存，自動初始化
+# 25 MB image, SQLite + local storage, auto-initialized
 ```
 
-### 場景 C：生產環境
+### Scenario C: Production
 
 ```bash
-# 使用上方「生產模式」的 docker-compose.prod.yml
-# PostgreSQL + MinIO，完整生產配置
+# Use the "Production mode" docker-compose.prod.yml above
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-### 場景 D：Windows 使用者
+### Scenario D: Windows
 
 ```powershell
-# 下載 .exe → 雙擊或命令列啟動
+# Download .exe → double-click or run from command line
 agentskills-server-windows-amd64.exe serve
-# 不需要安裝任何東西
+# No installation required
 ```
 
 ---
 
-## 技術架構
+## Architecture
 
 ```
-                                  ┌─── SQLite (嵌入式, 預設)
+                                  ┌─── SQLite (embedded, default)
                                   │
 agentskills-server ──── Database ─┤
      (Go binary)        Interface │
-                                  └─── PostgreSQL (生產)
+                                  └─── PostgreSQL (production)
 
-                                  ┌─── Local FS (預設)
+                                  ┌─── Local FS (default)
                                   │
                          Storage ─┤
                         Interface │
-                                  └─── S3/MinIO (生產)
+                                  └─── S3/MinIO (production)
 ```
 
-- **語言**：Go 1.22+
-- **HTTP Router**：go-chi/chi
-- **CLI Framework**：spf13/cobra
-- **嵌入式 DB**：modernc.org/sqlite（純 Go，無 CGO 依賴）
-- **Build 策略**：Go build tags 分離 CLI / Server
+- **Language**: Go 1.22+
+- **HTTP Router**: go-chi/chi
+- **CLI Framework**: spf13/cobra
+- **Embedded DB**: modernc.org/sqlite (pure Go, no CGO)
+- **Build Strategy**: Go build tags separate CLI / Server binaries
 
 ---
 
-## 開發指南
+## Development
 
 ```bash
-# 環境需求
-# - Go 1.22+
-# - (可選) Docker & Docker Compose
+# Requirements: Go 1.22+, (optional) Docker & Docker Compose
 
-# 編譯
+# Build
 make build-cli        # CLI binary
 make build-server     # Server binary
-make build-all        # 所有平台
+make build-all        # All platforms
 
-# 測試
-make test             # 執行所有測試
+# Test
+make test             # Run all tests
 
-# 啟動開發 Server
+# Dev server
 ./bin/agentskills-server serve
 
-# Docker 開發
+# Docker dev
 docker compose up -d
 ```
 
-詳細設計規格請參考 [`reference/SDD.md`](reference/SDD.md)。
+See [`reference/SDD.md`](reference/SDD.md) for the full design specification.
 
 ---
 
-## CI/CD 自動發布
+## CI/CD
 
-專案使用 GitHub Actions 自動化建置與發布：
+The project uses GitHub Actions for automated builds and releases.
 
-### 自動觸發流程
+### Trigger Rules
 
-| 事件 | 觸發的 Workflow | 動作 |
-|------|----------------|------|
-| Push / PR 到 `main` | `ci.yml` | 執行測試 + 驗證 build + 驗證 Docker build |
-| 推送 tag `v*` | `release.yml` | 測試 → 跨平台編譯 → Docker 鏡像推送 → GitHub Release |
+| Event | Workflow | Action |
+|-------|----------|--------|
+| Push / PR to `main` | `ci.yml` | Run tests + verify build + verify Docker build |
+| Push tag `v*` | `release.yml` | Test → cross-compile → Docker push → GitHub Release |
 
-### Release 流程
+### Release Process
 
 ```bash
-# 1. 打 tag
+# 1. Tag a release
 git tag v1.0.0
 git push origin v1.0.0
 
-# 2. GitHub Actions 自動：
-#    - 執行測試
-#    - 編譯 10 個 binary (5 平台 x CLI/Server)
-#    - 建置 Docker 鏡像 (linux/amd64 + linux/arm64)
-#    - 推送鏡像至 Docker Hub + GitHub Container Registry
-#    - 建立 GitHub Release + 上傳 binary + SHA256 checksum
+# 2. GitHub Actions automatically:
+#    - Runs tests
+#    - Compiles 10 binaries (5 platforms × CLI/Server)
+#    - Builds Docker images (linux/amd64 + linux/arm64)
+#    - Pushes images to Docker Hub + GitHub Container Registry
+#    - Creates GitHub Release + uploads binaries + SHA256 checksums
 ```
 
-### 需要設定的 GitHub Secrets
+### Required GitHub Secrets
 
-在 GitHub repo → Settings → Secrets and variables → Actions 中設定：
+Set these in GitHub repo → Settings → Secrets and variables → Actions:
 
-| Secret | 說明 | 取得方式 |
-|--------|------|---------|
-| `DOCKERHUB_USERNAME` | Docker Hub 帳號 | [hub.docker.com](https://hub.docker.com) 註冊 |
+| Secret | Description | How to get |
+|--------|-------------|------------|
+| `DOCKERHUB_USERNAME` | Docker Hub username | Register at [hub.docker.com](https://hub.docker.com) |
 | `DOCKERHUB_TOKEN` | Docker Hub Access Token | Docker Hub → Account Settings → Security → New Access Token |
-| `GITHUB_TOKEN` | GitHub Token (自動提供) | 不需要手動設定，GitHub Actions 自帶 |
+| `GITHUB_TOKEN` | GitHub Token (auto-provided) | No manual setup needed |
 
-### Docker 鏡像 Tag 規則
+### Docker Image Tag Convention
 
-推送 `v1.2.3` tag 後，會自動產生以下 Docker image tag：
+Pushing tag `v1.2.3` automatically generates:
 
 ```
 kai98k/agentskills-server:1.2.3
