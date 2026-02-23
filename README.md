@@ -69,9 +69,7 @@ sudo mv agentskills-linux-amd64 /usr/local/bin/agentskills
 # docker-compose.yml
 services:
   agentskills:
-    image: ghcr.io/liuyukai/agentskills-server:latest
-    # 或使用本地 build:
-    # build: .
+    build: .
     ports:
       - "8000:8000"
     volumes:
@@ -144,9 +142,7 @@ services:
 
   # ── AgentSkills Server ──────────────────────
   agentskills:
-    image: ghcr.io/liuyukai/agentskills-server:latest
-    # 或使用本地 build:
-    # build: .
+    build: .
     ports:
       - "8000:8000"
     depends_on:
