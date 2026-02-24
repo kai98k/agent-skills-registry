@@ -3,9 +3,9 @@ FROM golang:1.24-alpine AS builder
 RUN apk add --no-cache git
 ENV GOTOOLCHAIN=local
 WORKDIR /src
-COPY go.mod go.sum ./
+COPY cli/go.mod cli/go.sum ./
 RUN go mod download
-COPY . .
+COPY cli/ .
 RUN CGO_ENABLED=0 go build -tags server -ldflags="-s -w" -o /agentskills-server .
 
 # === Runtime Stage (~25MB) ===
