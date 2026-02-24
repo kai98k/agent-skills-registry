@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agentskills
+      POSTGRES_USER: prod
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prod -d agentskills"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_USER} $${MINIO_PASSWORD};
+      mc mb --ignore-existing local/skills;
+      echo 'Bucket [skills] created';
+      "
+
+  agentskills:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AGENTSKILLS_DB_DRIVER: postgres
+      AGENTSKILLS_DB_DSN: postgres://prod:${PG_PASSWORD}@postgres:5432/agentskills?sslmode=disable
+      AGENTSKILLS_STORAGE_DRIVER: s3
+      AGENTSKILLS_S3_ENDPOINT: http://minio:9000
+      AGENTSKILLS_S3_ACCESS_KEY: ${MINIO_USER}
+      AGENTSKILLS_S3_SECRET_KEY: ${MINIO_PASSWORD}
+      AGENTSKILLS_S3_BUCKET: skills
+    command: ["serve", "--port", "8000"]
+
+volumes:
+  pgdata:
+  miniodata:

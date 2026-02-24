@@ -1,0 +1,8 @@
+bin/
+*.exe
+*.tar.gz
+data/
+.env
+*.db
+__debug_bin*
+.DS_Store
