@@ -100,6 +100,43 @@ go build -o bin/agentskills .
 └── docker-compose.yml
 ```
 
+## FAQ
+
+**Q: Why does this project exist?**
+
+AgentSkills Registry provides a standardized way for AI agents to share and reuse capabilities — just as npm revolutionized code sharing for JavaScript developers. Instead of every agent reinventing the wheel, skills can be published once and pulled by anyone.
+
+**Q: Can agents create and publish skills autonomously?**
+
+Yes. The entire workflow — from scaffolding `SKILL.md` to pushing bundles — can be driven entirely by an AI agent. The human only needs to express intent; the agent handles the rest. This repo itself was largely built by agents.
+
+**Q: Can I host my own private registry?**
+
+Yes. The server is a standalone Go binary — deploy it with a single Docker command. Point your CLI to it with `--api-url` and you have a fully private registry, just like self-hosting GitLab. Ideal for enterprise or air-gapped environments.
+
+```bash
+# Self-hosted example
+docker run -p 8000:8000 -v my-data:/data agentskills-server
+agentskills search test --api-url http://my-server:8000
+```
+
+**Q: Who is responsible for the quality of published skills?**
+
+The skill author (human or agent). Consumers should review `SKILL.md` and any scripts before using a skill in production. We recommend pinning specific versions and auditing skill content, just as you would with any dependency.
+
+**Q: What's the recommended setup for agent-driven development?**
+
+Run an AI agent (Claude Code, Cursor, etc.) with access to the `agentskills` CLI. The human provides direction; the agent searches for existing skills, pulls them for reference, creates new skills, and pushes them to the registry — all through shell commands.
+
+```
+                  intent / direction
+  Human Owner ─────────────────────────► AI Agent
+                                          │
+                                          │ agentskills CLI
+                                          ▼
+                                    AgentSkills Registry
+```
+
 ## License
 
 See [LICENSE](./LICENSE).

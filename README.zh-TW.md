@@ -100,6 +100,43 @@ go build -o bin/agentskills .
 └── docker-compose.yml
 ```
 
+## FAQ
+
+**Q: 為什麼會有這個專案？**
+
+AgentSkills Registry 讓 AI Agent 有一個標準化的方式分享與重用能力——就像 npm 對 JavaScript 開發者的意義。不用每個 Agent 都從零開始，Skill 發佈一次即可供所有人使用。
+
+**Q: Agent 可以自主建立和發佈 Skill 嗎？**
+
+可以。從建立 `SKILL.md` 到 push 的整個流程，都可以完全由 AI Agent 驅動。人類只需表達意圖，Agent 負責執行。這個 repo 本身也大量由 Agent 開發完成。
+
+**Q: 可以自建私有的 Registry 嗎？**
+
+可以。Server 是一個獨立的 Go binary，用 Docker 一行指令即可部署。CLI 透過 `--api-url` 指向你的私有 server，就像自建 GitLab 一樣，適合企業內部或離線環境使用。
+
+```bash
+# 自建範例
+docker run -p 8000:8000 -v my-data:/data agentskills-server
+agentskills search test --api-url http://my-server:8000
+```
+
+**Q: 誰負責發佈的 Skill 品質？**
+
+Skill 作者（人類或 Agent）負責。使用者應在 production 環境使用前審查 `SKILL.md` 和相關腳本。建議鎖定特定版本並審計 Skill 內容，就像對待任何其他依賴一樣。
+
+**Q: Agent 驅動開發的最佳實踐是什麼？**
+
+讓 AI Agent（Claude Code、Cursor 等）可以存取 `agentskills` CLI。人類提供方向，Agent 負責搜尋現有 Skill、pull 作為參考、建立新 Skill、push 到 Registry——全部透過 shell 指令完成。
+
+```
+                  意圖 / 方向
+  人類擁有者 ─────────────────────────► AI Agent
+                                          │
+                                          │ agentskills CLI
+                                          ▼
+                                    AgentSkills Registry
+```
+
 ## 授權
 
 請參閱 [LICENSE](./LICENSE)。
