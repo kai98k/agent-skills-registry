@@ -2,32 +2,58 @@
 
 **English** | [中文](./README.zh-TW.md)
 
-AgentSkills is a centralized registry platform for AI Agent Skills, similar to npm or Docker Hub. Developers can publish (push) and download (pull) standardized Skill Bundles via the CLI tool. The platform handles version control, metadata parsing, and file storage.
+AgentSkills is a centralized registry platform for AI Agent Skills, similar to npm or Docker Hub. Developers can publish (push) and download (pull) standardized **Skill Bundles** via the CLI tool. The platform handles version control, metadata parsing, and file storage.
+
+## Why AgentSkills?
+
+AI agents (such as Claude Code, AutoGPT, LangChain agents) are becoming increasingly powerful, but they lack a standardized way to **share and reuse capabilities**. AgentSkills solves this by providing:
+
+- **Standardized Skill Format** — Each skill is a directory containing a `SKILL.md` (YAML frontmatter + Markdown instructions), optional `scripts/` for callable tools, `references/` for RAG/few-shot examples, and `assets/` for templates.
+- **One-command sharing** — `agentskills push` packages and uploads a skill; `agentskills pull` downloads and extracts it. Just like `npm publish` / `npm install`.
+- **Agent-agnostic** — Skill Bundles are plain files. Any agent framework can consume them by reading `SKILL.md` for instructions and loading the accompanying scripts/references.
+- **Version control** — Every skill is versioned with strict semver. Teams can pin specific versions and upgrade on their own schedule.
+- **Discoverability** — `agentskills search` lets developers find community-contributed skills by keyword or tag (e.g., `code-review`, `data-analysis`, `devops`).
+
+### Skill Bundle Structure
+
+```
+my-skill/
+├── SKILL.md         # Required: YAML frontmatter (name, version, description, author, tags) + Markdown instructions
+├── scripts/         # Optional: scripts the agent can execute
+├── references/      # Optional: RAG / few-shot reference documents
+└── assets/          # Optional: static templates and resources
+```
+
+## How It Works
+
+```
+AI Agent (Claude Code, AutoGPT, etc.)
+        │
+        │  Executes CLI commands in shell
+        ▼
+   agentskills CLI ──── HTTP REST API ────► agentskills server
+   (Go binary)                              (Go binary, built with -tags server)
+```
+
+The CLI is the sole interface between agents and the registry server. Agents interact with the platform by executing shell commands — no need to know the underlying HTTP API:
+
+- `agentskills search code-review` → finds matching skills on the server
+- `agentskills pull code-review` → downloads and extracts the skill bundle locally
+- `agentskills push ./my-skill` → packages and uploads a skill to the server
 
 ## Architecture
 
-- **Backend API**: FastAPI (Python 3.12+) in `api/`
-- **CLI Tool**: Go + Cobra in `cli/`
-- **Database**: PostgreSQL 16 (Docker)
-- **Object Storage**: MinIO S3-compatible (Docker)
+- **Backend API + CLI Tool**: Go + Cobra in `cli/` (server built with `-tags server`)
+- **Storage**: File-based (bundles stored as `.tar.gz` with JSON metadata)
 - **Spec**: See [`reference/SDD.md`](./reference/SDD.md) for the complete design document
 
 ## Quick Start
 
-### Start Infrastructure
+### Run the Server (Docker)
 
 ```bash
-docker compose up -d
-```
-
-This starts PostgreSQL (port 5432) and MinIO (API: 9000, Console: 9001).
-
-### Start the API (Development)
-
-```bash
-cd api
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+docker build -t agentskills-server .
+docker run -p 8000:8000 -v agentskills-data:/data agentskills-server
 ```
 
 ### Build the CLI
@@ -40,11 +66,11 @@ go build -o bin/agentskills .
 ### Verify
 
 ```bash
-# Health check
-curl http://localhost:8000/v1/health
-
 # CLI usage
 ./cli/bin/agentskills --help
+
+# Search for skills
+./cli/bin/agentskills search test
 ```
 
 ## CLI Commands
@@ -61,23 +87,17 @@ curl http://localhost:8000/v1/health
 
 ```
 .
-├── api/                  # FastAPI backend
-│   ├── app/
-│   │   ├── routes/       # API endpoints
-│   │   └── services/     # Business logic
-│   ├── tests/
-│   ├── Dockerfile
-│   └── requirements.txt
-├── cli/                  # Go CLI tool
-│   ├── cmd/              # Cobra commands
+├── cli/                  # Go CLI + Server
+│   ├── cmd/              # Cobra commands (incl. serve)
+│   ├── server/           # HTTP handlers & file store
 │   ├── internal/         # Internal packages
 │   ├── Dockerfile
 │   ├── Makefile
 │   └── go.mod
 ├── reference/            # Design documents
 │   └── SDD.md
-├── docker-compose.yml
-└── init.sql
+├── Dockerfile            # Server Docker image
+└── docker-compose.yml
 ```
 
 ## License
