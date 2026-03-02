@@ -52,8 +52,8 @@ func vendorAdd(cmd *cobra.Command, nameVersion string) error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
-	apiURL, _ := cmd.Flags().GetString("api-url")
-	if apiURL != "" {
+	if cmd.Flags().Changed("api-url") {
+		apiURL, _ := cmd.Flags().GetString("api-url")
 		cfg.APIURL = apiURL
 	}
 
