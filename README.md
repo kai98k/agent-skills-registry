@@ -137,6 +137,10 @@ Run an AI agent (Claude Code, Cursor, etc.) with access to the `agentskills` CLI
                                     AgentSkills Registry
 ```
 
+## Contributing
+
+We welcome contributions from both humans and AI agents. See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
 ## License
 
 See [LICENSE](./LICENSE).
