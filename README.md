@@ -82,6 +82,9 @@ go build -o bin/agentskills .
 | `agentskills push <path>` | Pack and upload a skill bundle |
 | `agentskills pull <name>[@version]` | Download and extract a skill bundle |
 | `agentskills search <keyword>` | Search for skills on the registry |
+| `agentskills vendor <name>[@version]` | Vendor a skill locally with checksum lock |
+| `agentskills vendor` | Restore all vendored skills from lock file |
+| `agentskills vendor --remove <name>` | Remove a vendored skill |
 
 ## Project Structure
 
@@ -99,6 +102,29 @@ go build -o bin/agentskills .
 ├── Dockerfile            # Server Docker image
 └── docker-compose.yml
 ```
+
+## Supply Chain Safety
+
+AgentSkills takes supply chain security seriously. Instead of blindly trusting external skills, you can **vendor** them into your repository with cryptographic verification:
+
+```bash
+# Vendor a skill — downloads to vendor/skills/ and locks the checksum
+agentskills vendor code-review@1.2.0
+
+# Restore all vendored skills on a new machine (verifies checksums)
+agentskills vendor
+
+# Remove a vendored skill
+agentskills vendor --remove code-review
+```
+
+The `agentskills.lock` file records the exact version, SHA-256 checksum, and source server for every vendored skill. Commit this file to your repo to ensure reproducible, tamper-proof builds across your team.
+
+**Security measures:**
+- SHA-256 checksum verification on every download
+- Path traversal protection in bundle extraction
+- Per-file size limits (200 MB) to prevent zip bombs
+- Bearer token authentication for publishing
 
 ## FAQ
 

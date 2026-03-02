@@ -82,6 +82,9 @@ go build -o bin/agentskills .
 | `agentskills push <path>` | 打包並上傳 Skill Bundle |
 | `agentskills pull <name>[@version]` | 下載並解壓 Skill Bundle |
 | `agentskills search <keyword>` | 搜尋平台上的 Skills |
+| `agentskills vendor <name>[@version]` | 將 Skill 鎖定到本地 vendor 目錄 |
+| `agentskills vendor` | 從 lock file 還原所有 vendored Skills |
+| `agentskills vendor --remove <name>` | 移除已 vendor 的 Skill |
 
 ## 專案結構
 
@@ -99,6 +102,29 @@ go build -o bin/agentskills .
 ├── Dockerfile            # Server Docker image
 └── docker-compose.yml
 ```
+
+## 供應鏈安全
+
+AgentSkills 重視供應鏈安全。你可以將 Skill **vendor** 到本地 repo，搭配加密驗證，而非盲目信任外部來源：
+
+```bash
+# Vendor 一個 Skill — 下載到 vendor/skills/ 並鎖定 checksum
+agentskills vendor code-review@1.2.0
+
+# 在新機器上還原所有 vendored Skills（驗證 checksum）
+agentskills vendor
+
+# 移除 vendored Skill
+agentskills vendor --remove code-review
+```
+
+`agentskills.lock` 檔案記錄每個 vendored Skill 的精確版本、SHA-256 checksum 和來源 server。將此檔案提交到 repo，確保團隊間可重現且防篡改的建置。
+
+**安全措施：**
+- 每次下載都進行 SHA-256 checksum 驗證
+- Bundle 解壓時的 path traversal 防護
+- 單檔大小限制（200 MB）防止 zip bomb
+- 發佈時使用 Bearer token 認證
 
 ## FAQ
 

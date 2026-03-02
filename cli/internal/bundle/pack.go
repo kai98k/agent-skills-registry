@@ -129,8 +129,11 @@ func Unpack(tarGzPath, destDir string) error {
 
 		target := filepath.Join(destDir, header.Name)
 
-		// Path traversal protection
-		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(destDir)) {
+		// Path traversal protection: ensure target is within destDir.
+		// Append separator to prevent "/tmp/safe" matching "/tmp/safevil".
+		cleanDest := filepath.Clean(destDir) + string(os.PathSeparator)
+		cleanTarget := filepath.Clean(target)
+		if cleanTarget != filepath.Clean(destDir) && !strings.HasPrefix(cleanTarget, cleanDest) {
 			return fmt.Errorf("path traversal detected: %s", header.Name)
 		}
 
@@ -147,11 +150,18 @@ func Unpack(tarGzPath, destDir string) error {
 			if err != nil {
 				return fmt.Errorf("creating file: %w", err)
 			}
-			if _, err := io.Copy(outFile, tr); err != nil {
+			// Limit extracted file size to 200MB to prevent zip bombs.
+			const maxFileSize = 200 << 20
+			if _, err := io.Copy(outFile, io.LimitReader(tr, maxFileSize+1)); err != nil {
 				outFile.Close()
 				return fmt.Errorf("writing file: %w", err)
 			}
+			fi, _ := outFile.Stat()
 			outFile.Close()
+			if fi != nil && fi.Size() > maxFileSize {
+				os.Remove(target)
+				return fmt.Errorf("file %s exceeds max size (%d bytes)", header.Name, maxFileSize)
+			}
 		}
 	}
 
